@@ -295,9 +295,9 @@ def _generate_model_card(summary: dict, profile_path: Path | None, slug: str,
     base_model  = summary.get("base_model", "unknown")
     method      = summary.get("method", "lora")
     epochs      = summary.get("epochs", "?")
-    lora_rank   = summary.get("lora_rank", "?")
+    lora_rank   = summary.get("lora_rank") or summary.get("lora_r", "?")
     lora_alpha  = summary.get("lora_alpha", "?")
-    train_turns = summary.get("train_samples", "?")
+    train_turns = summary.get("train_samples") or summary.get("samples", "?")
     trained_at  = (summary.get("trained_at") or "")[:10] or "unknown"
     perplexity  = summary.get("evaluation", {}).get("perplexity")
     probe_score = summary.get("evaluation", {}).get("probe_score")
@@ -377,8 +377,8 @@ ollama run {slug}
 
 def _generate_dataset_card(summary: dict, slug: str, dataset_repo: str, version: str) -> str:
     """Generate a HuggingFace Dataset Card (README.md) for a persona training dataset."""
-    train_turns     = summary.get("train_samples", "?")
-    data_samples    = summary.get("data_samples", "?")
+    train_turns     = summary.get("train_samples") or summary.get("samples", "?")
+    data_samples    = summary.get("data_samples") or summary.get("samples", "?")
     dataset_version = summary.get("dataset_version", "?")
     export_hash     = summary.get("dataset_export_hash", "")
     export_hash_fmt = f"`{export_hash[:12]}…`" if export_hash else "—"
@@ -476,6 +476,7 @@ def cmd_push(args: argparse.Namespace) -> None:
         print(f"  Generated Model Card → README.md")
 
         print(f"Pushing {args.version} → {args.hf_repo}…")
+        api.create_repo(args.hf_repo, repo_type="model", private=True, exist_ok=True)
         api.upload_folder(
             folder_path=str(staging_path),
             repo_id=args.hf_repo,
