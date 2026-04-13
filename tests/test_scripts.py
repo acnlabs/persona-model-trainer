@@ -1873,6 +1873,16 @@ class TestGenerateModelCard(unittest.TestCase):
                                                   "alice/samantha-persona-dataset", "v1")
         self.assertIn("samantha", card)
 
+    def test_dataset_card_empty_export_hash_shows_dash(self):
+        # export_hash absent → show "—" not a bare ellipsis
+        summary = self._make_summary()
+        card = self.v_mod._generate_dataset_card(summary, "samantha",
+                                                  "alice/samantha-persona-dataset", "v1")
+        self.assertNotIn("`…`", card)
+        # The "—" placeholder should be present in the export hash row
+        self.assertIn("| Export hash", card)
+        self.assertIn("—", card)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

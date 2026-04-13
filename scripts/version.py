@@ -26,6 +26,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
@@ -380,6 +381,7 @@ def _generate_dataset_card(summary: dict, slug: str, dataset_repo: str, version:
     data_samples    = summary.get("data_samples", "?")
     dataset_version = summary.get("dataset_version", "?")
     export_hash     = summary.get("dataset_export_hash", "")
+    export_hash_fmt = f"`{export_hash[:12]}…`" if export_hash else "—"
     trained_at      = (summary.get("trained_at") or "")[:10] or "unknown"
 
     card = f"""---
@@ -407,7 +409,7 @@ processed by [persona-model-trainer](https://github.com/acnlabs/persona-model-tr
 | Train turns     | {train_turns} |
 | Total samples   | {data_samples} |
 | Dataset version | {dataset_version} |
-| Export hash     | `{export_hash[:12]}…` |
+| Export hash     | {export_hash_fmt} |
 | Prepared at     | {trained_at} |
 | Model version   | {version} |
 
@@ -420,10 +422,20 @@ processed by [persona-model-trainer](https://github.com/acnlabs/persona-model-tr
     return card
 
 
+def _create_tag_safe(api: object, repo_id: str, repo_type: str, tag: str) -> None:
+    """Create a HF Hub tag, ignoring errors when the tag already exists."""
+    try:
+        api.create_tag(repo_id=repo_id, repo_type=repo_type, tag=tag)
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc)
+        if "already exists" in msg.lower() or "409" in msg:
+            print(f"  Tag {tag} already exists — skipping.")
+        else:
+            raise
+
+
 def cmd_push(args: argparse.Namespace) -> None:
     """Push a version's adapter to HuggingFace Hub (optional feature)."""
-    import tempfile
-
     try:
         from huggingface_hub import HfApi
     except ImportError:
@@ -442,27 +454,36 @@ def cmd_push(args: argparse.Namespace) -> None:
     summary = _load_summary(version_dir / "training_summary.json")
     profile_path = Path(summary["profile_path"]) if summary.get("profile_path") else None
 
-    # Generate Model Card and write to a temp README.md alongside the adapter
+    api = HfApi()
+
+    # Upload adapter via a temp staging dir so the local archive is never modified.
+    # The Model Card (README.md) embeds the target HF repo URL, so it must not be
+    # persisted back into the archive (which is repo-agnostic).
     card = _generate_model_card(summary, profile_path, args.slug,
                                 args.hf_repo, args.version)
-    readme_path = version_dir / "README.md"
-    readme_path.write_text(card, encoding="utf-8")
-    print(f"  Generated Model Card → {readme_path.name}")
+    with tempfile.TemporaryDirectory() as staging:
+        staging_path = Path(staging)
+        # Mirror adapter files into staging (symlinks avoid large copies)
+        for item in version_dir.iterdir():
+            if item.name == "data":
+                continue  # excluded: use --include-data for dataset push
+            dst = staging_path / item.name
+            if item.is_dir():
+                shutil.copytree(str(item), str(dst))
+            else:
+                shutil.copy2(str(item), str(dst))
+        (staging_path / "README.md").write_text(card, encoding="utf-8")
+        print(f"  Generated Model Card → README.md")
 
-    api = HfApi()
-    print(f"Pushing {args.version} → {args.hf_repo}…")
-    api.upload_folder(
-        folder_path=str(version_dir),
-        repo_id=args.hf_repo,
-        repo_type="model",
-        commit_message=f"{args.version}: adapter weights + Model Card for {args.slug}",
-        ignore_patterns=["data/*"],
-    )
-    api.create_tag(
-        repo_id=args.hf_repo,
-        repo_type="model",
-        tag=args.version,
-    )
+        print(f"Pushing {args.version} → {args.hf_repo}…")
+        api.upload_folder(
+            folder_path=str(staging_path),
+            repo_id=args.hf_repo,
+            repo_type="model",
+            commit_message=f"{args.version}: adapter weights + Model Card for {args.slug}",
+        )
+
+    _create_tag_safe(api, args.hf_repo, "model", args.version)
     print(f"✅ Pushed and tagged {args.version} on {args.hf_repo}")
 
     if getattr(args, "include_data", False):
@@ -476,11 +497,9 @@ def cmd_push(args: argparse.Namespace) -> None:
             if confirm != "y":
                 print("  Skipped.")
             else:
-                # Generate Dataset Card
                 ds_card = _generate_dataset_card(summary, args.slug, dataset_repo, args.version)
                 with tempfile.TemporaryDirectory() as tmp:
                     tmp_path = Path(tmp)
-                    # Copy data/ contents + write dataset card
                     shutil.copytree(str(data_dir), str(tmp_path / "data"))
                     (tmp_path / "README.md").write_text(ds_card, encoding="utf-8")
                     api.create_repo(dataset_repo, repo_type="dataset", private=True, exist_ok=True)
@@ -490,7 +509,7 @@ def cmd_push(args: argparse.Namespace) -> None:
                         repo_type="dataset",
                         commit_message=f"{args.version}: prepared dataset for {args.slug}",
                     )
-                api.create_tag(repo_id=dataset_repo, repo_type="dataset", tag=args.version)
+                _create_tag_safe(api, dataset_repo, "dataset", args.version)
                 print(f"✅ Dataset pushed and tagged {args.version} on {dataset_repo}")
 
 
