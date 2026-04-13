@@ -408,9 +408,7 @@ p = Path(sys.argv[1])
 if not p.exists(): sys.exit(0)
 s = json.loads(p.read_text(encoding='utf-8'))
 changed = False
-# formats stored as list for consistency with the normal training path
-fmt_list = [f.strip() for f in sys.argv[4].split(',')]
-for k, v in [('version', sys.argv[2]), ('formats', fmt_list), ('quant', sys.argv[3])]:
+for k, v in [('version', sys.argv[2]), ('formats', sys.argv[4]), ('quant', sys.argv[3])]:
     if k not in s:
         s[k] = v
         changed = True
