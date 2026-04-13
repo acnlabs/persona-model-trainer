@@ -4,8 +4,8 @@
 set -euo pipefail
 
 SLUG="persona-model-trainer"
-VERSION="0.2.0"
-CHANGELOG="Evaluation layer (perplexity + probe), model versioning, Gemma 4 preset, pipeline orchestrator, Colab sync, 138 tests."
+VERSION="0.3.0"
+CHANGELOG="Auto-generate HuggingFace Model Card and Dataset Card on version push; fix 3 bugs in push flow (archive pollution, tag idempotency, empty hash display)."
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +32,13 @@ rsync -a \
   --exclude='.pytest_cache/' \
   --exclude='__pycache__/' \
   --exclude='*.pyc' \
+  --exclude='.agents/' \
+  --exclude='.claude/' \
+  --exclude='.continue/' \
+  --exclude='.kiro/' \
+  --exclude='.trae/' \
+  --exclude='.windsurf/' \
+  --exclude='skills-lock.json' \
   "${SKILL_DIR}/" "${DIST_DIR}/"
 
 echo "→ Package contents:"
