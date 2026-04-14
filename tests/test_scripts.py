@@ -1688,7 +1688,7 @@ class TestProbesJsonGenerated(unittest.TestCase):
         )
 
         env = dict(__import__("os").environ)
-        env["OPENPERSONA_DATASETS"] = str(self.tmp)
+        env["OPENPERSONA_KNOWLEDGE"] = str(self.tmp)
 
         # __file__ → tests/test_scripts.py → parent = tests/ → parent = persona-model-trainer/ → parent = skills/
         skills_dir = Path(__file__).parent.parent.parent
